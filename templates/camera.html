@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transmisor</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #222; color: white; margin: 0; padding: 20px; }
+        video { width: 100%; max-width: 400px; border-radius: 10px; border: 2px solid #555; background: #000; }
+        button { margin-top: 15px; padding: 12px 24px; font-size: 16px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; width: 100%; max-width: 400px;}
+        button.stop { background: #dc3545; }
+    </style>
+</head>
+<body>
+    <h2>Transmisor</h2>
+    <video id="video" autoplay playsinline muted></video>
+    <br>
+    <button id="startBtn">Iniciar Transmisión</button>
+
+    <script>
+        const video = document.getElementById('video');
+        const startBtn = document.getElementById('startBtn');
+        let stream = null;
+        let ws = null;
+        let intervalId = null;
+
+        startBtn.addEventListener('click', async () => {
+            if (stream) {
+                // Detener
+                if (intervalId) clearInterval(intervalId);
+                if (ws) ws.close();
+                if (stream) stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                stream = null;
+                startBtn.textContent = 'Iniciar Transmisión';
+                startBtn.classList.remove('stop');
+                return;
+            }
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } } 
+                });
+                video.srcObject = stream;
+                
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+                
+                ws.onopen = () => {
+                    startBtn.textContent = 'Detener';
+                    startBtn.classList.add('stop');
+                    
+                    intervalId = setInterval(() => {
+                        if (ws.readyState === WebSocket.OPEN && video.videoWidth > 0) {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            canvas.getContext('2d').drawImage(video, 0, 0);
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                            ws.send(dataUrl.split(',')[1]);
+                        }
+                    }, 50); // 50ms = 20 FPS
+                };
+                
+                ws.onclose = () => {
+                    if (intervalId) clearInterval(intervalId);
+                };
+            } catch (err) {
+                alert('No se pudo acceder a la cámara: ' + err.message);
+            }
+        });
+    </script>
+</body>
+</html>
